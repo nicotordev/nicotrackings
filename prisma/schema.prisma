@@ -1,0 +1,59 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  telegramId BigInt   @unique
+  username  String?
+  firstName String?
+  lastName  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  packages  Package[]
+
+  @@map("users")
+}
+
+model Package {
+  id             String         @id @default(uuid())
+  trackingNumber String
+  carrier        String?
+  label          String?
+  status         String?
+  lastEvent      String?
+  lastUpdate     DateTime?
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  events         TrackingEvent[]
+
+  @@unique([userId, trackingNumber])
+  @@index([userId])
+  @@index([trackingNumber])
+  @@map("packages")
+}
+
+model TrackingEvent {
+  id          String   @id @default(uuid())
+  packageId   String
+  package     Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  status      String
+  description String
+  location    String?
+  timestamp   DateTime
+  createdAt   DateTime @default(now())
+
+  @@unique([packageId, timestamp])
+  @@index([packageId])
+  @@map("tracking_events")
+}
