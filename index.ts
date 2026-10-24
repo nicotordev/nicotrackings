@@ -1,4 +1,5 @@
 import "dotenv/config";
+import type { Bot, Context } from "grammy";
 import { db } from "./src/db/client.js";
 import { createBot, setupBotCommands } from "./src/bot/index.js";
 import { pollerService } from "./src/services/poller.js";
@@ -78,13 +79,31 @@ async function main() {
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-  // 6. Start bot polling
+  // Polling must not take the HTTP server down. A 409 means another
+  // instance is still calling getUpdates during a deploy.
   console.log("🤖 NicoTrackings bot is running and listening for Telegram updates!");
-  await bot.start({
-    onStart(botInfo) {
-      console.log(`✨ Logged in as @${botInfo.username} (${botInfo.first_name})`);
-    },
-  });
+  void pollTelegram(bot);
+}
+
+async function pollTelegram(bot: Bot<Context>): Promise<void> {
+  for (;;) {
+    try {
+      await bot.start({
+        onStart(botInfo) {
+          console.log(`✨ Logged in as @${botInfo.username} (${botInfo.first_name})`);
+        },
+      });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("409")) {
+        console.error("Fatal error starting bot:", error);
+        return;
+      }
+      console.warn("[Bot] Another poller is active. Retrying Telegram polling in 5s.");
+      await Bun.sleep(5_000);
+    }
+  }
 }
 
 main().catch((err) => {
