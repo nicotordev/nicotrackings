@@ -3,7 +3,7 @@ import type { Bot, Context } from "grammy";
 import { db } from "./src/db/client.js";
 import { createBot, setupBotCommands } from "./src/bot/index.js";
 import { pollerService } from "./src/services/poller.js";
-import { handleSeventeenTrackWebhook } from "./src/services/webhook.js";
+import { handleParcelsWebhook } from "./src/services/webhook.js";
 
 async function main() {
   console.log("=========================================");
@@ -31,11 +31,10 @@ async function main() {
     process.exit(1);
   }
 
-  const trackingApiKey = process.env.TRACKING_API_KEY;
-  if (!trackingApiKey || trackingApiKey.trim() === "" || trackingApiKey.includes("your_17track_api_key")) {
-    console.log("✅ 17TRACK webhook-only mode. Numbers are stored here and updated when a webhook arrives.");
+  if (!process.env.PARCELS_API_KEY?.trim() && !process.env.TRACKING_API_KEY?.trim()) {
+    console.warn("⚠️ PARCELS_API_KEY is not set. /track cannot ask Parcels for a status.");
   } else {
-    console.log("✅ 17TRACK API client configured.");
+    console.log("✅ Parcels API client configured.");
   }
 
   // 3. Initialize bot
@@ -58,12 +57,12 @@ async function main() {
         "/health": {
           GET: () => new Response("ok"),
         },
-        "/webhooks/17track": {
-          POST: (req) => handleSeventeenTrackWebhook(req, bot.api),
+        "/webhooks/parcels": {
+          POST: (req) => handleParcelsWebhook(req, bot.api),
         },
       },
     });
-    console.log(`✅ HTTP listening on :${listenPort} (health and 17TRACK webhook)`);
+    console.log(`✅ HTTP listening on :${listenPort} (health and Parcels webhook)`);
   }
 
   // 5. Setup graceful shutdown

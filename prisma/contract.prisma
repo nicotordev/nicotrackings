@@ -39,6 +39,8 @@ model Package {
   friendlyName          String?
   lang                  String         @default("en")
   tag                   String?
+  parcelsRequestId      String?
+  webhookSecret         String?
   status                PackageStatus  @default(Pending)
   subStatus             String?
   subStatusDescr        String?
@@ -72,6 +74,7 @@ model Package {
 
   @@unique([trackingNumber, userId])
   @@index([trackingNumber], name: "package_tracking_number")
+  @@index([parcelsRequestId], name: "package_parcels_request")
   @@index([userId], name: "package_user")
   @@index([trackingState, status], name: "package_tracking_state")
 }

@@ -329,6 +329,13 @@
                   "kind": "scalar"
                 }
               },
+              "parcelsRequestId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "pieces": {
                 "nullable": true,
                 "type": {
@@ -420,6 +427,13 @@
               },
               "userId": {
                 "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "webhookSecret": {
+                "nullable": true,
                 "type": {
                   "codecId": "pg/text@1",
                   "kind": "scalar"
@@ -549,6 +563,9 @@
                 "originCountry": {
                   "column": "originCountry"
                 },
+                "parcelsRequestId": {
+                  "column": "parcelsRequestId"
+                },
                 "pieces": {
                   "column": "pieces"
                 },
@@ -584,6 +601,9 @@
                 },
                 "userId": {
                   "column": "userId"
+                },
+                "webhookSecret": {
+                  "column": "webhookSecret"
                 },
                 "weightRaw": {
                   "column": "weightRaw"
@@ -1073,6 +1093,11 @@
                   "dataType": "pg/text",
                   "nullable": true
                 },
+                "parcelsRequestId": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "pieces": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -1153,6 +1178,11 @@
                   "dataType": "pg/text",
                   "nullable": false
                 },
+                "webhookSecret": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "weightRaw": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -1182,6 +1212,14 @@
                 }
               ],
               "indexes": [
+                {
+                  "columns": [
+                    "parcelsRequestId"
+                  ],
+                  "name": "package_parcels_request_72ecfcaf",
+                  "prefix": "package_parcels_request",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "trackingNumber"
@@ -1421,7 +1459,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "f2f398e2c62c8112f2ba5f1307ff578f09b111cd3385ccc445564ea377fd45a1"
+    "storageHash": "d8504c60ac798d8facbb2aa31bb7aa8477d1c1d38f96ea47a1e54c31bf75846c"
   },
   "execution": {
     "executionHash": "454d0f50eab3f53618b425bbf91311245cbcd5d2c29045c4baea3c933fc800a6",

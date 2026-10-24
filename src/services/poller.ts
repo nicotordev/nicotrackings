@@ -1,7 +1,7 @@
 import cron, { type ScheduledTask } from "node-cron";
 import type { Api } from "grammy";
 import { applyTrackingResult, packagesDueForPoll, packagesForNumber } from "../db/packages.js";
-import { toPackageStatus, trackKey, trackingService, type TrackingResult } from "./tracking.js";
+import { toPackageStatus, trackingService, type TrackingResult } from "./tracking.js";
 import { notifierService } from "./notifier.js";
 
 export class PollerService {
@@ -15,7 +15,7 @@ export class PollerService {
     }
 
     if (!trackingService.hasApiKey()) {
-      console.log("[Poller] No 17TRACK API key. Package updates come from the webhook only.");
+      console.log("[Poller] PARCELS_API_KEY is missing. Status checks stay off.");
       return;
     }
 
@@ -40,7 +40,7 @@ export class PollerService {
     }
 
     if (!trackingService.hasApiKey()) {
-      console.warn("[Poller] TRACKING_API_KEY is missing. Skipping this cycle.");
+      console.warn("[Poller] PARCELS_API_KEY is missing. Skipping this cycle.");
       return 0;
     }
 
@@ -52,20 +52,17 @@ export class PollerService {
       if (packages.length === 0) return 0;
 
       console.log(`[Poller] Starting status check for ${packages.length} active package records...`);
-      const queries = new Map<string, { number: string; carrier?: number }>();
+      const queries = new Map<string, { number: string; destinationCountry?: string }>();
       for (const pkg of packages) {
-        const carrier = pkg.carrierCode ?? undefined;
-        queries.set(trackKey(pkg.trackingNumber, carrier), {
+        queries.set(pkg.trackingNumber, {
           number: pkg.trackingNumber,
-          ...(carrier != null ? { carrier } : {}),
+          ...(pkg.destinationCountry ? { destinationCountry: pkg.destinationCountry } : {}),
         });
       }
 
       const trackingMap = await trackingService.getBatchTracking([...queries.values()]);
       for (const pkg of packages) {
-        const tracking =
-          trackingMap.get(trackKey(pkg.trackingNumber, pkg.carrierCode ?? undefined)) ??
-          trackingMap.get(pkg.trackingNumber);
+        const tracking = trackingMap.get(pkg.trackingNumber);
         if (!tracking) continue;
         const notified = await notifyPackageChange(api, pkg, tracking);
         if (notified) updatedCount++;

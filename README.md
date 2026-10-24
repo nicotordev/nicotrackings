@@ -7,7 +7,7 @@
     <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8+-blue?logo=typescript" alt="TypeScript" /></a>
     <a href="https://grammy.dev/"><img src="https://img.shields.io/badge/Telegram-grammY-2CA5E0?logo=telegram" alt="grammY" /></a>
     <a href="https://www.prisma.io/"><img src="https://img.shields.io/badge/Prisma-PostgreSQL-2D3748?logo=prisma" alt="Prisma" /></a>
-    <a href="https://api.17track.net/"><img src="https://img.shields.io/badge/17TRACK-v2.4%20API-FF6600" alt="17TRACK" /></a>
+    <a href="https://parcelsapp.com/developers/docs"><img src="https://img.shields.io/badge/Parcels-API%20v4-2F6F4E" alt="Parcels" /></a>
   </p>
 </div>
 
@@ -15,12 +15,12 @@
 
 ## 🌟 Key Features
 
-- 🌍 **Multi-Carrier Coverage**: Track packages across hundreds of international carriers (DHL, FedEx, UPS, USPS, China Post, Correos de Chile, Correos de España, AliExpress Standard Shipping, and more) via **17TRACK API v2.4**.
-- ⚡ **Instant Push Webhooks**: Built-in HTTP server listening for 17TRACK webhook callbacks (`/webhooks/17track`) with SHA256 HMAC signature verification for immediate status delivery.
-- 🔔 **Automated Polling Cron Fallback**: Periodic background poller querying packages in batches (up to 40 per request) to capture checkpoints even without public webhook exposure.
+- 🌍 **Multi-Carrier Coverage**: Track packages across international carriers (DHL, FedEx, UPS, USPS, China Post, Correos, and more) via the **Parcels API v4**.
+- ⚡ **Request Webhooks**: Each lookup can ask Parcels to POST the finished result to `/webhooks/parcels`. The `Parcels-Signature` header is HMAC-SHA256 over `timestamp.body`.
+- 🔔 **Polling**: A cron job re-checks active packages (10 numbers per request). Parcels webhooks finish one request; they do not keep watching a shipment.
 - 📱 **Interactive Telegram Commands**:
   - `/start` & `/help`: Interactive setup and command guide.
-  - `/track <number> [name]`: Register a new tracking number with an optional custom alias (e.g. `/track 1Z9999999999999999 My Mechanical Keyboard`).
+  - `/track <number> [country] [name]`: Register a tracking number. A two-letter country code is the destination (e.g. `/track RR123456789CN ES Keycaps`).
   - `/list`: Overview of all your tracked packages with real-time status badges.
   - `/status <number>`: Detailed timeline including carrier name, current milestone, and chronological checkpoints.
   - `/remove <number>`: Stop tracking and remove a package from your personal dashboard.
@@ -51,15 +51,14 @@ nicotrackings/
 │   │   ├── client.ts         # Prisma client singleton
 │   │   └── packages.ts       # Database helper queries for packages & events
 │   └── services/
-│       ├── tracking.ts       # 17TRACK v2.4 API client (register, fetch, batch query & signatures)
+│       ├── tracking.ts       # Parcels API v4 client (lookup, batch, signatures)
 │       ├── notifier.ts       # HTML message formatters & Telegram alert dispatcher
 │       ├── poller.ts         # Cron service for periodic status checks
-│       └── webhook.ts        # 17TRACK webhook endpoint handler with verification
+│       └── webhook.ts        # Parcels webhook handler with signature verification
 ├── tests/
 │   ├── db.test.ts            # Database integration tests
 │   ├── notifier.test.ts      # Message formatting and badge tests
-│   ├── tracking.test.ts      # Tracking service and fallback tests
-│   └── seventeen-track.test.ts # 17TRACK v2.4 parser & webhook signature tests
+│   └── tracking.test.ts      # Parcels parser, signature, and client tests
 ├── .env.example              # Environment variables template
 ├── bun.lock                  # Bun lockfile
 ├── index.ts                  # Application entry point & Bun HTTP server
@@ -106,16 +105,13 @@ help - Show help and usage guide
 
 ---
 
-### 4. Obtain 17TRACK API Credentials
+### 4. Obtain a Parcels API key
 
-1. Register or sign in at the [17TRACK Developer Console](https://api.17track.net/).
-2. Navigate to **API Security Key** in your dashboard.
-3. Copy your Security Key (Token).
-> *Note: If no API key is provided, the bot will run in sandbox/mock mode for development and local testing.*
+1. Open the [Parcels API docs](https://parcelsapp.com/developers/docs) and create an API key.
+2. Put it in `PARCELS_API_KEY`. The bot sends it as `Authorization: Bearer`.
+3. Ordinary parcel numbers need a destination country: set `PARCELS_DESTINATION_COUNTRY` or pass it in the command (`/track NUMBER ES`).
 
-*(Optional Webhooks)* To receive instant push updates:
-- Expose the HTTP server port (e.g., via domain or tunnel) and point the 17TRACK webhook URL to:
-  `http://<your-domain-or-ip>:<WEBHOOK_PORT>/webhooks/17track`
+The bot sends `webhook_url` on each lookup. On Railway that URL is `https://$RAILWAY_PUBLIC_DOMAIN/webhooks/parcels`. Override it with `PARCELS_WEBHOOK_URL` when you are not on Railway. Parcels requires HTTPS in production.
 
 ---
 
@@ -133,8 +129,8 @@ Edit `.env` and set your configuration:
 # Telegram Bot Token from @BotFather
 BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
 
-# 17TRACK API Security Key (https://api.17track.net/)
-TRACKING_API_KEY=your_17track_api_key_here
+# Parcels API key (https://parcelsapp.com/developers/docs)
+PARCELS_API_KEY=your_parcels_api_key_here
 
 # PostgreSQL connection string
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/nicotrackings"
@@ -142,8 +138,9 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/nicotrackings"
 # Cron schedule for polling package updates (default: every 15 minutes)
 POLL_INTERVAL_CRON="*/15 * * * *"
 
-# Optional HTTP server port for health checks and 17TRACK webhook push notifications
-WEBHOOK_PORT=3000
+# Optional. Defaults to https://$RAILWAY_PUBLIC_DOMAIN/webhooks/parcels
+# PARCELS_WEBHOOK_URL=https://example.com/webhooks/parcels
+# WEBHOOK_PORT=3000
 ```
 
 ---

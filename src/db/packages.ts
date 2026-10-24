@@ -50,20 +50,12 @@ export function packageWrite(result: TrackingResult, extras: { friendlyName?: st
     lastUpdate: result.lastUpdate ?? null,
     originCountry: result.originCountry ?? null,
     destinationCountry: result.destinationCountry ?? null,
-    destinationCity: result.destinationCity ?? null,
-    destinationPostalCode: result.destinationPostalCode ?? null,
-    shipDate: result.shipDate ?? null,
-    estimatedFrom: result.estimatedFrom ?? null,
-    estimatedTo: result.estimatedTo ?? null,
-    daysOfTransit: result.daysOfTransit ?? null,
-    daysAfterLastUpdate: result.daysAfterLastUpdate ?? null,
     serviceType: result.serviceType ?? null,
     weightRaw: result.weightRaw ?? null,
     pieces: result.pieces ?? null,
-    localNumber: result.localNumber ?? null,
-    localProvider: result.localProvider ?? null,
-    providerTips: result.providerTips ?? null,
     eventsHash: result.eventsHash ?? null,
+    parcelsRequestId: result.requestId ?? null,
+    webhookSecret: result.webhookSecret ?? null,
     deliveredAt: result.status === "Delivered" ? (result.lastUpdate ?? new Date()) : null,
   };
 }
@@ -82,6 +74,15 @@ export async function applyTrackingResult(
   result: TrackingResult,
   current: { status: PackageStatus; deliveredAt: Date | null; eventsHash: number | null; lastEvent: string | null },
 ) {
+  if (result.refreshOnly) {
+    const updated = await db.orm.public.Package.where({ id: packageId }).update({
+      ...(result.requestId ? { parcelsRequestId: result.requestId } : {}),
+      ...(result.webhookSecret ? { webhookSecret: result.webhookSecret } : {}),
+      ...(result.destinationCountry ? { destinationCountry: result.destinationCountry } : {}),
+    });
+    return { updated, changed: false };
+  }
+
   const changed =
     current.status !== result.status ||
     current.lastEvent !== (result.lastEvent ?? null) ||
@@ -101,20 +102,12 @@ export async function applyTrackingResult(
     lastUpdate: result.lastUpdate ?? new Date(),
     originCountry: result.originCountry ?? null,
     destinationCountry: result.destinationCountry ?? null,
-    destinationCity: result.destinationCity ?? null,
-    destinationPostalCode: result.destinationPostalCode ?? null,
-    shipDate: result.shipDate ?? null,
-    estimatedFrom: result.estimatedFrom ?? null,
-    estimatedTo: result.estimatedTo ?? null,
-    daysOfTransit: result.daysOfTransit ?? null,
-    daysAfterLastUpdate: result.daysAfterLastUpdate ?? null,
     serviceType: result.serviceType ?? null,
     weightRaw: result.weightRaw ?? null,
     pieces: result.pieces ?? null,
-    localNumber: result.localNumber ?? null,
-    localProvider: result.localProvider ?? null,
-    providerTips: result.providerTips ?? null,
     eventsHash: result.eventsHash ?? null,
+    ...(result.requestId ? { parcelsRequestId: result.requestId } : {}),
+    ...(result.webhookSecret ? { webhookSecret: result.webhookSecret } : {}),
     deliveredAt,
   });
 
@@ -131,13 +124,8 @@ export async function packagesDueForPoll() {
   });
 }
 
-export async function markTrackingStopped(trackingNumber: string, carrierCode?: number) {
-  const rows = await db.orm.public.Package.where({ trackingNumber }).all();
-  const matches = rows.filter((row) => carrierCode == null || row.carrierCode == null || row.carrierCode === carrierCode);
-  for (const row of matches) {
-    await db.orm.public.Package.where({ id: row.id }).update({ trackingState: "Stopped" });
-  }
-  return matches;
+export async function packagesForRequest(parcelsRequestId: string) {
+  return db.orm.public.Package.where({ parcelsRequestId }).include("user").all();
 }
 
 export async function packagesForNumber(trackingNumber: string, carrierCode?: number) {

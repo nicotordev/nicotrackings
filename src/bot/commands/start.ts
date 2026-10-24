@@ -10,10 +10,10 @@ export async function handleStart(ctx: CommandContext<Context>) {
   const message = `
 👋 <b>Welcome to NicoTrackings!</b>
 
-I am your international package tracking assistant. I monitor packages from carriers worldwide (<b>DHL, FedEx, UPS, USPS, China Post, Correos, etc.</b>) via 17TRACK and notify you as soon as their status changes.
+I am your international package tracking assistant. I monitor packages from carriers worldwide (<b>DHL, FedEx, UPS, USPS, China Post, Correos, etc.</b>) via Parcels and notify you as soon as their status changes.
 
 📋 <b>Available Commands:</b>
-• <code>/track &lt;number&gt; [name]</code> - Track a new package (e.g., <code>/track RR123456789CN Keycaps</code>)
+• <code>/track &lt;number&gt; [country] [name]</code> - Track a new package (e.g., <code>/track RR123456789CN ES Keycaps</code>)
 • <code>/list</code> - View all your tracked packages and current statuses
 • <code>/status &lt;number&gt;</code> - Check real-time tracking details and recent events
 • <code>/remove &lt;number&gt;</code> - Stop tracking a package

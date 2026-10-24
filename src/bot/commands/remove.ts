@@ -1,7 +1,6 @@
 import type { CommandContext, Context } from "grammy";
-import { deletePackage, findPackage, findUserByChat, otherPackageCount } from "../../db/packages.js";
+import { deletePackage, findPackage, findUserByChat } from "../../db/packages.js";
 import { escapeHtml } from "../../services/notifier.js";
-import { trackingService } from "../../services/tracking.js";
 
 export async function handleRemove(ctx: CommandContext<Context>) {
   const chatId = String(ctx.chat.id);
@@ -36,14 +35,7 @@ export async function handleRemove(ctx: CommandContext<Context>) {
     );
   }
 
-  const remaining = await otherPackageCount(pkg.trackingNumber, pkg.id);
   await deletePackage(pkg.id);
-  if (remaining === 0 && trackingService.hasApiKey()) {
-    const removed = await trackingService.deleteTracking(pkg.trackingNumber, pkg.carrierCode ?? undefined);
-    if (!removed) {
-      console.warn(`[17TRACK] Local package ${pkg.trackingNumber} was removed, but deletetrack did not accept it.`);
-    }
-  }
 
   const displayName = pkg.friendlyName ? `"${escapeHtml(pkg.friendlyName)}" (<code>${escapeHtml(trackingNumber)}</code>)` : `<code>${escapeHtml(trackingNumber)}</code>`;
 

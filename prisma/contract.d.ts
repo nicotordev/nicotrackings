@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'f2f398e2c62c8112f2ba5f1307ff578f09b111cd3385ccc445564ea377fd45a1'>;
+  StorageHashBase<'d8504c60ac798d8facbb2aa31bb7aa8477d1c1d38f96ea47a1e54c31bf75846c'>;
 export type ExecutionHash =
   ExecutionHashBase<'454d0f50eab3f53618b425bbf91311245cbcd5d2c29045c4baea3c933fc800a6'>;
 export type ProfileHash =
@@ -371,6 +371,7 @@ export namespace Models {
     localNumber: FieldOutputTypes['public']['Package']['localNumber'];
     localProvider: FieldOutputTypes['public']['Package']['localProvider'];
     originCountry: FieldOutputTypes['public']['Package']['originCountry'];
+    parcelsRequestId: FieldOutputTypes['public']['Package']['parcelsRequestId'];
     pieces: FieldOutputTypes['public']['Package']['pieces'];
     providerTips: FieldOutputTypes['public']['Package']['providerTips'];
     serviceType: FieldOutputTypes['public']['Package']['serviceType'];
@@ -383,6 +384,7 @@ export namespace Models {
     trackingState: FieldOutputTypes['public']['Package']['trackingState'];
     updatedAt: FieldOutputTypes['public']['Package']['updatedAt'];
     userId: FieldOutputTypes['public']['Package']['userId'];
+    webhookSecret: FieldOutputTypes['public']['Package']['webhookSecret'];
     weightRaw: FieldOutputTypes['public']['Package']['weightRaw'];
     events: public_TrackingEvent[];
     milestones: public_Milestone[];
@@ -654,6 +656,12 @@ type ContractBase = Omit<
                   readonly nullable: true;
                   readonly many: false;
                 };
+                readonly parcelsRequestId: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
                 readonly pieces: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
@@ -734,6 +742,12 @@ type ContractBase = Omit<
                   readonly nullable: false;
                   readonly many: false;
                 };
+                readonly webhookSecret: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
                 readonly weightRaw: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
@@ -744,6 +758,12 @@ type ContractBase = Omit<
               primaryKey: { readonly columns: readonly ['id'] };
               uniques: readonly [{ readonly columns: readonly ['trackingNumber', 'userId'] }];
               indexes: readonly [
+                {
+                  readonly name: 'package_parcels_request_72ecfcaf';
+                  readonly prefix: 'package_parcels_request';
+                  readonly columns: readonly ['parcelsRequestId'];
+                  readonly unique: false;
+                },
                 {
                   readonly name: 'package_tracking_number_abd2abb3';
                   readonly prefix: 'package_tracking_number';
@@ -1146,6 +1166,10 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly parcelsRequestId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly pieces: {
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -1195,6 +1219,10 @@ type ContractBase = Omit<
               };
               readonly userId: {
                 readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly webhookSecret: {
+                readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
               readonly weightRaw: {
@@ -1261,6 +1289,7 @@ type ContractBase = Omit<
                 readonly localNumber: { readonly column: 'localNumber' };
                 readonly localProvider: { readonly column: 'localProvider' };
                 readonly originCountry: { readonly column: 'originCountry' };
+                readonly parcelsRequestId: { readonly column: 'parcelsRequestId' };
                 readonly pieces: { readonly column: 'pieces' };
                 readonly providerTips: { readonly column: 'providerTips' };
                 readonly serviceType: { readonly column: 'serviceType' };
@@ -1273,6 +1302,7 @@ type ContractBase = Omit<
                 readonly trackingState: { readonly column: 'trackingState' };
                 readonly updatedAt: { readonly column: 'updatedAt' };
                 readonly userId: { readonly column: 'userId' };
+                readonly webhookSecret: { readonly column: 'webhookSecret' };
                 readonly weightRaw: { readonly column: 'weightRaw' };
               };
             };

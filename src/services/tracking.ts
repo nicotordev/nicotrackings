@@ -1,17 +1,8 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-export const SEVENTEEN_TRACK_BASE_URL = "https://api.17track.net/track/v2.4";
-export const SEVENTEEN_TRACK_BATCH_LIMIT = 40;
-
-export const SeventeenTrackErrorCode = {
-  InvalidFormat: -18010012,
-  AlreadyRegistered: -18019901,
-  NotRegistered: -18019902,
-  CarrierNotDetected: -18019903,
-  QuotaExceeded: -18019908,
-  NoTrackingInfo: -18019909,
-} as const;
+export const PARCELS_BASE_URL = "https://parcelsapp.com/api/v4";
+export const PARCELS_BATCH_LIMIT = 10;
 
 export const PACKAGE_STATUSES = [
   "Pending",
@@ -27,7 +18,6 @@ export const PACKAGE_STATUSES = [
 ] as const;
 
 export type PackageStatus = (typeof PACKAGE_STATUSES)[number];
-export type MainStatus = Exclude<PackageStatus, "Pending">;
 
 export interface TrackingEvent {
   date?: string;
@@ -52,7 +42,6 @@ export interface TrackingResult {
   trackingNumber: string;
   carrier?: string;
   carrierCode?: number;
-  finalCarrierCode?: number;
   status: PackageStatus;
   subStatus?: string;
   subStatusDescr?: string;
@@ -61,231 +50,108 @@ export interface TrackingResult {
   lastUpdate?: Date;
   originCountry?: string;
   destinationCountry?: string;
-  destinationCity?: string;
-  destinationPostalCode?: string;
-  shipDate?: string;
-  estimatedFrom?: Date;
-  estimatedTo?: Date;
-  daysOfTransit?: number;
-  daysAfterLastUpdate?: number;
   serviceType?: string;
   weightRaw?: string;
   pieces?: string;
-  localNumber?: string;
-  localProvider?: string;
-  providerTips?: string;
-  eventsHash?: number;
   events: TrackingEvent[];
   milestones: TrackingMilestone[];
+  eventsHash?: number;
+  requestId?: string;
+  webhookSecret?: string;
+  /** Carrier check is still running. Do not replace a known status with Pending. */
+  refreshOnly?: boolean;
   errorCode?: number;
-  raw?: unknown;
 }
 
 export interface TrackQuery {
   number: string;
-  carrier?: number;
-}
-
-export interface RegisterInput {
-  number: string;
-  carrier?: number;
-  finalCarrier?: number;
-  lang?: string;
-  tag?: string;
-  email?: string;
-  orderNo?: string;
-  originCountry?: string;
   destinationCountry?: string;
-  destinationPostalCode?: string;
-  destinationCity?: string;
-  shipDate?: string;
-  phoneNumber?: string;
-  phoneNumberLast4?: string;
-  remark?: string;
+  carrier?: number;
 }
 
-export interface RegisterResult {
-  ok: boolean;
-  number: string;
-  carrierCode?: number;
-  alreadyRegistered: boolean;
-  errorCode?: number;
-  message?: string;
-}
+export class ParcelsApiError extends Error {
+  readonly code: string | number | undefined;
 
-export type WebhookNotice =
-  | { event: "TRACKING_UPDATED"; result: TrackingResult }
-  | { event: "TRACKING_STOPPED"; number: string; carrierCode?: number }
-  | { event: "IGNORED"; reason: string };
-
-export class SeventeenTrackApiError extends Error {
-  readonly code: number | undefined;
-
-  constructor(message: string, code?: number) {
+  constructor(message: string, code?: string | number) {
     super(message);
-    this.name = "SeventeenTrackApiError";
+    this.name = "ParcelsApiError";
     this.code = code;
   }
 }
 
 const nullableString = z.string().nullable().optional();
-const nullableNumber = z.number().nullable().optional();
-
-const addressSchema = z
-  .object({
-    country: nullableString,
-    state: nullableString,
-    city: nullableString,
-    street: nullableString,
-    postal_code: nullableString,
-  })
-  .loose();
 
 const eventSchema = z
   .object({
-    time_iso: nullableString,
-    time_utc: nullableString,
-    description: nullableString,
-    description_translation: z
-      .object({
-        lang: nullableString,
-        description: nullableString,
-      })
-      .loose()
-      .nullable()
-      .optional(),
+    state: nullableString,
     location: nullableString,
-    stage: nullableString,
-    sub_status: nullableString,
-    address: addressSchema.nullable().optional(),
+    date: nullableString,
   })
   .loose();
 
-const providerSchema = z
+const shipmentSchema = z
   .object({
-    provider: z
-      .object({
-        key: z.union([z.number(), z.string()]).nullable().optional(),
-        name: nullableString,
-        alias: nullableString,
-        homepage: nullableString,
-        country: nullableString,
-      })
+    trackingId: nullableString,
+    status: nullableString,
+    error: nullableString,
+    origin: nullableString,
+    destination: nullableString,
+    originCode: nullableString,
+    destinationCode: nullableString,
+    transportMode: nullableString,
+    pieces: z.number().nullable().optional(),
+    weight: z.number().nullable().optional(),
+    weight_unit: nullableString,
+    states: z.array(eventSchema).nullable().optional(),
+    detectedCarrier: z
+      .object({ slug: nullableString, name: nullableString })
       .loose()
       .nullable()
       .optional(),
-    provider_tips: nullableString,
-    events_hash: nullableNumber,
-    events: z.array(eventSchema).nullable().optional(),
-    latest_sync_status: nullableString,
+    services: z
+      .array(z.object({ slug: nullableString, name: nullableString }).loose())
+      .nullable()
+      .optional(),
   })
   .loose();
 
-const trackInfoSchema = z
+const resultSchema = z
   .object({
-    shipping_info: z
-      .object({
-        shipper_address: addressSchema.nullable().optional(),
-        recipient_address: addressSchema.nullable().optional(),
-      })
-      .loose()
-      .nullable()
-      .optional(),
-    latest_status: z
-      .object({
-        status: nullableString,
-        sub_status: nullableString,
-        sub_status_descr: nullableString,
-      })
-      .loose()
-      .nullable()
-      .optional(),
-    latest_event: eventSchema.nullable().optional(),
-    time_metrics: z
-      .object({
-        days_of_transit: nullableNumber,
-        days_after_last_update: nullableNumber,
-        estimated_delivery_date: z
-          .object({
-            from: nullableString,
-            to: nullableString,
-          })
-          .loose()
-          .nullable()
-          .optional(),
-      })
-      .loose()
-      .nullable()
-      .optional(),
-    milestone: z
+    tracking_number: z.string(),
+    state: z.string().optional(),
+    from_cache: z.boolean().optional(),
+    shipment: shipmentSchema.nullable().optional(),
+  })
+  .loose();
+
+const responseSchema = z
+  .object({
+    request_id: z.string().optional(),
+    status: z.string().optional(),
+    done: z.boolean().optional(),
+    results: z.array(resultSchema).optional(),
+    rejected: z
       .array(
         z
           .object({
-            key_stage: nullableString,
-            time_iso: nullableString,
-            time_utc: nullableString,
+            tracking_number: nullableString,
+            code: nullableString,
+            message: nullableString,
           })
           .loose(),
       )
-      .nullable()
       .optional(),
-    misc_info: z
+    webhook: z
       .object({
-        service_type: nullableString,
-        weight_raw: nullableString,
-        pieces: nullableString,
-        local_number: nullableString,
-        local_provider: nullableString,
+        secret: nullableString,
       })
       .loose()
       .nullable()
       .optional(),
-    tracking: z
-      .object({
-        providers: z.array(providerSchema).nullable().optional(),
-      })
-      .loose()
-      .nullable()
-      .optional(),
-  })
-  .loose();
-
-const acceptedItemSchema = z
-  .object({
-    number: z.string(),
-    carrier: z.union([z.number(), z.string()]).nullable().optional(),
-    tag: nullableString,
-    destination_postal_code: nullableString,
-    origin_country: nullableString,
-    destination_country: nullableString,
-    destination_city: nullableString,
-    ship_date: nullableString,
-    track_info: trackInfoSchema.nullable().optional(),
-  })
-  .loose();
-
-const rejectedItemSchema = z
-  .object({
-    number: z.string(),
-    carrier: z.union([z.number(), z.string()]).nullable().optional(),
     error: z
       .object({
-        code: z.number().optional(),
+        code: nullableString,
         message: nullableString,
-      })
-      .loose()
-      .nullable()
-      .optional(),
-  })
-  .loose();
-
-const envelopeSchema = z
-  .object({
-    code: z.number(),
-    data: z
-      .object({
-        accepted: z.array(z.unknown()).optional(),
-        rejected: z.array(z.unknown()).optional(),
       })
       .loose()
       .nullable()
@@ -296,474 +162,285 @@ const envelopeSchema = z
 const webhookSchema = z
   .object({
     event: z.string(),
-    data: z.unknown().optional(),
+    request_id: z.string().optional(),
+    done: z.boolean().optional(),
+    result: resultSchema.optional(),
+    results: z.array(resultSchema).optional(),
   })
   .loose();
 
-const MAIN_STATUS_SET = new Set<string>(PACKAGE_STATUSES.filter((status) => status !== "Pending"));
-
-export function isMainStatus(value: string): value is MainStatus {
-  return MAIN_STATUS_SET.has(value);
+export function parcelsApiKey(): string {
+  const key = process.env.PARCELS_API_KEY ?? process.env.TRACKING_API_KEY ?? "";
+  if (!key.trim() || key.includes("your_")) return "";
+  return key.trim();
 }
 
-export function toPackageStatus(value: string | null | undefined): PackageStatus {
-  if (value && isMainStatus(value)) return value;
-  return "Pending";
+export function parcelsWebhookUrl(): string | undefined {
+  const explicit = process.env.PARCELS_WEBHOOK_URL?.trim();
+  if (explicit) return explicit;
+  const domain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (!domain) return undefined;
+  return `https://${domain}/webhooks/parcels`;
 }
 
-export function signSeventeenTrackBody(rawBody: string, apiKey: string): string {
-  return createHash("sha256").update(`${rawBody}/${apiKey}`, "utf8").digest("hex");
-}
-
-export function verifySeventeenTrackSignature(rawBody: string, signature: string, apiKey: string): boolean {
-  const expected = signSeventeenTrackBody(rawBody, apiKey);
+export function verifyParcelsSignature(rawBody: string, header: string, secret: string, nowMs = Date.now()): boolean {
+  const parts = new Map<string, string>();
+  for (const piece of header.split(",")) {
+    const index = piece.indexOf("=");
+    if (index <= 0) continue;
+    parts.set(piece.slice(0, index).trim(), piece.slice(index + 1).trim());
+  }
+  const timestamp = parts.get("t");
+  const signature = parts.get("v1");
+  if (!timestamp || !signature || !/^\d+$/.test(timestamp)) return false;
+  const ageMs = Math.abs(nowMs - Number(timestamp) * 1000);
+  if (ageMs > 5 * 60 * 1000) return false;
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
   const left = Buffer.from(expected, "utf8");
-  const right = Buffer.from(signature.trim().toLowerCase(), "utf8");
+  const right = Buffer.from(signature.toLowerCase(), "utf8");
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
 }
 
-function cleanText(value: string | null | undefined): string | undefined {
+export function toPackageStatus(value: string): PackageStatus {
+  for (const status of PACKAGE_STATUSES) {
+    if (status === value) return status;
+  }
+  return "Pending";
+}
+
+export function mapCarrierStatus(raw: string | null | undefined): PackageStatus {
+  const status = (raw ?? "").toLowerCase().replace(/[\s-]+/g, "_");
+  if (!status || status === "pending" || status === "processing") return "Pending";
+  if (status.includes("out_for_delivery") || status.includes("outfordelivery")) return "OutForDelivery";
+  if (status.includes("fail") || status.includes("undeliver")) return "DeliveryFailure";
+  if (status.includes("deliver")) return "Delivered";
+  if (status.includes("pickup") || status.includes("pick_up")) return "AvailableForPickup";
+  if (status.includes("exception") || status.includes("alert")) return "Exception";
+  if (status.includes("expired")) return "Expired";
+  if (status.includes("not_found") || status.includes("notfound")) return "NotFound";
+  if (status.includes("info") || status.includes("received") || status.includes("accepted")) return "InfoReceived";
+  if (status.includes("transit") || status.includes("depart") || status.includes("arriv")) return "InTransit";
+  return "InTransit";
+}
+
+function clean(value: string | null | undefined): string | undefined {
   const text = value?.trim();
   return text ? text : undefined;
 }
 
-function parseCarrier(value: number | string | null | undefined): number | undefined {
-  if (typeof value === "number" && Number.isInteger(value)) return value;
-  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
-  return undefined;
-}
-
 function parseDate(value: string | null | undefined): Date | undefined {
-  const text = cleanText(value);
+  const text = clean(value);
   if (!text) return undefined;
   const date = new Date(text);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
-function toInt32(value: number | null | undefined): number | undefined {
-  if (value == null || !Number.isInteger(value)) return undefined;
-  if (value > 2_147_483_647 || value < -2_147_483_648) return undefined;
-  return value;
+function hashText(value: string): number {
+  let hash = 0;
+  for (const char of value) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) | 0;
+  return hash;
 }
 
-function eventDescription(event: z.infer<typeof eventSchema>): string | undefined {
-  return cleanText(event.description_translation?.description) ?? cleanText(event.description);
-}
-
-function toTrackingEvent(
-  event: z.infer<typeof eventSchema>,
-  provider?: { key?: number; name?: string },
-): TrackingEvent | undefined {
-  const description = eventDescription(event) ?? cleanText(event.sub_status) ?? cleanText(event.stage);
-  if (!description) return undefined;
-  const timeUtc = parseDate(event.time_utc) ?? parseDate(event.time_iso);
-  return {
-    date: cleanText(event.time_iso) ?? timeUtc?.toISOString(),
-    ...(timeUtc ? { timeUtc } : {}),
-    description,
-    ...(cleanText(event.location) ? { location: cleanText(event.location) } : {}),
-    ...(cleanText(event.stage) ? { stage: cleanText(event.stage) } : {}),
-    ...(cleanText(event.sub_status) ? { subStatus: cleanText(event.sub_status) } : {}),
-    ...(cleanText(event.address?.country) ? { country: cleanText(event.address?.country) } : {}),
-    ...(cleanText(event.address?.city) ? { city: cleanText(event.address?.city) } : {}),
-    ...(provider?.key != null ? { providerKey: provider.key } : {}),
-    ...(provider?.name ? { providerName: provider.name } : {}),
-  };
-}
-
-export function parseAcceptedTrackItem(input: unknown): TrackingResult | undefined {
-  const parsed = acceptedItemSchema.safeParse(input);
-  if (!parsed.success) return undefined;
-
-  const item = parsed.data;
-  const info = item.track_info;
-  const providers = info?.tracking?.providers ?? [];
-  const events: TrackingEvent[] = [];
-  let providerTips: string | undefined;
-  let eventsHash: number | undefined;
-  let carrierName: string | undefined;
-
-  for (const provider of providers) {
-    const key = parseCarrier(provider.provider?.key);
-    const name = cleanText(provider.provider?.name) ?? cleanText(provider.provider?.alias);
-    if (!carrierName && name) carrierName = name;
-    providerTips ??= cleanText(provider.provider_tips);
-    eventsHash ??= toInt32(provider.events_hash);
-    for (const event of provider.events ?? []) {
-      const mapped = toTrackingEvent(event, {
-        ...(key != null ? { key } : {}),
-        ...(name ? { name } : {}),
-      });
-      if (mapped) events.push(mapped);
-    }
-  }
-
-  events.sort((left, right) => {
-    const leftTime = left.timeUtc?.getTime() ?? 0;
-    const rightTime = right.timeUtc?.getTime() ?? 0;
-    return rightTime - leftTime;
-  });
-
-  const latest = info?.latest_event ? toTrackingEvent(info.latest_event) : undefined;
-  const status = toPackageStatus(info?.latest_status?.status);
-  const metrics = info?.time_metrics;
-  const misc = info?.misc_info;
-  const milestones: TrackingMilestone[] = [];
-  for (const milestone of info?.milestone ?? []) {
-    const keyStage = cleanText(milestone.key_stage);
-    if (!keyStage) continue;
-    const timeUtc = parseDate(milestone.time_utc) ?? parseDate(milestone.time_iso);
-    milestones.push({
-      keyStage,
-      ...(timeUtc ? { timeUtc } : {}),
-      ...(cleanText(milestone.time_iso) ? { timeIso: cleanText(milestone.time_iso) } : {}),
-    });
-  }
-
-  const carrierCode = parseCarrier(item.carrier);
-  return {
-    trackingNumber: item.number.trim(),
-    ...(carrierName ? { carrier: carrierName } : {}),
-    ...(carrierCode != null ? { carrierCode } : {}),
-    status: info?.latest_status?.status ? status : "NotFound",
-    ...(cleanText(info?.latest_status?.sub_status)
-      ? { subStatus: cleanText(info?.latest_status?.sub_status) }
-      : {}),
-    ...(cleanText(info?.latest_status?.sub_status_descr)
-      ? { subStatusDescr: cleanText(info?.latest_status?.sub_status_descr) }
-      : {}),
-    ...(latest?.description ? { lastEvent: latest.description } : {}),
-    ...(latest?.location ? { lastEventLocation: latest.location } : {}),
-    ...(latest?.timeUtc ? { lastUpdate: latest.timeUtc } : {}),
-    ...(cleanText(info?.shipping_info?.shipper_address?.country) || cleanText(item.origin_country)
-      ? {
-          originCountry:
-            cleanText(info?.shipping_info?.shipper_address?.country) ?? cleanText(item.origin_country),
-        }
-      : {}),
-    ...(cleanText(info?.shipping_info?.recipient_address?.country) || cleanText(item.destination_country)
-      ? {
-          destinationCountry:
-            cleanText(info?.shipping_info?.recipient_address?.country) ?? cleanText(item.destination_country),
-        }
-      : {}),
-    ...(cleanText(info?.shipping_info?.recipient_address?.city) || cleanText(item.destination_city)
-      ? {
-          destinationCity:
-            cleanText(info?.shipping_info?.recipient_address?.city) ?? cleanText(item.destination_city),
-        }
-      : {}),
-    ...(cleanText(item.destination_postal_code)
-      ? { destinationPostalCode: cleanText(item.destination_postal_code) }
-      : {}),
-    ...(cleanText(item.ship_date) ? { shipDate: cleanText(item.ship_date) } : {}),
-    ...(parseDate(metrics?.estimated_delivery_date?.from)
-      ? { estimatedFrom: parseDate(metrics?.estimated_delivery_date?.from) }
-      : {}),
-    ...(parseDate(metrics?.estimated_delivery_date?.to)
-      ? { estimatedTo: parseDate(metrics?.estimated_delivery_date?.to) }
-      : {}),
-    ...(toInt32(metrics?.days_of_transit) != null ? { daysOfTransit: toInt32(metrics?.days_of_transit) } : {}),
-    ...(toInt32(metrics?.days_after_last_update) != null
-      ? { daysAfterLastUpdate: toInt32(metrics?.days_after_last_update) }
-      : {}),
-    ...(cleanText(misc?.service_type) ? { serviceType: cleanText(misc?.service_type) } : {}),
-    ...(cleanText(misc?.weight_raw) ? { weightRaw: cleanText(misc?.weight_raw) } : {}),
-    ...(cleanText(misc?.pieces) ? { pieces: cleanText(misc?.pieces) } : {}),
-    ...(cleanText(misc?.local_number) ? { localNumber: cleanText(misc?.local_number) } : {}),
-    ...(cleanText(misc?.local_provider) ? { localProvider: cleanText(misc?.local_provider) } : {}),
-    ...(providerTips ? { providerTips } : {}),
-    ...(eventsHash != null ? { eventsHash } : {}),
-    events,
-    milestones,
-    raw: input,
-  };
-}
-
-export function parseWebhookPayload(input: unknown): WebhookNotice {
-  const parsed = webhookSchema.safeParse(input);
-  if (!parsed.success) return { event: "IGNORED", reason: "Unrecognized webhook body." };
-
-  if (parsed.data.event === "TRACKING_STOPPED") {
-    const data = z
-      .object({
-        number: z.string(),
-        carrier: z.union([z.number(), z.string()]).nullable().optional(),
-      })
-      .loose()
-      .safeParse(parsed.data.data);
-    if (!data.success) return { event: "IGNORED", reason: "TRACKING_STOPPED is missing a tracking number." };
-    const carrierCode = parseCarrier(data.data.carrier);
+export function shipmentToResult(
+  trackingNumber: string,
+  shipment: z.infer<typeof shipmentSchema> | null | undefined,
+  meta?: { requestId?: string; webhookSecret?: string; destinationCountry?: string },
+): TrackingResult {
+  const error = clean(shipment?.error);
+  if (error) {
     return {
-      event: "TRACKING_STOPPED",
-      number: data.data.number.trim(),
-      ...(carrierCode != null ? { carrierCode } : {}),
+      trackingNumber,
+      status: "Exception",
+      lastEvent: error,
+      events: [],
+      milestones: [],
+      ...(meta?.requestId ? { requestId: meta.requestId } : {}),
+      ...(meta?.webhookSecret ? { webhookSecret: meta.webhookSecret } : {}),
+      ...(meta?.destinationCountry ? { destinationCountry: meta.destinationCountry } : {}),
     };
   }
 
-  if (parsed.data.event === "TRACKING_UPDATED") {
-    const result = parseAcceptedTrackItem(parsed.data.data);
-    if (!result) return { event: "IGNORED", reason: "TRACKING_UPDATED could not be parsed." };
-    return { event: "TRACKING_UPDATED", result };
+  const events: TrackingEvent[] = [];
+  for (const state of shipment?.states ?? []) {
+    const description = clean(state.state);
+    if (!description) continue;
+    const timeUtc = parseDate(state.date);
+    events.push({
+      description,
+      ...(clean(state.date) ? { date: clean(state.date) } : {}),
+      ...(timeUtc ? { timeUtc } : {}),
+      ...(clean(state.location) ? { location: clean(state.location) } : {}),
+    });
   }
 
-  return { event: "IGNORED", reason: `Unsupported webhook event ${parsed.data.event}.` };
-}
-
-function mockResult(number: string): TrackingResult {
-  const now = new Date();
+  const latest = events[0];
+  const carrier = clean(shipment?.detectedCarrier?.name) ?? clean(shipment?.services?.[0]?.name);
+  const status = mapCarrierStatus(shipment?.status);
+  const weightUnit = clean(shipment?.weight_unit);
+  const weightRaw = typeof shipment?.weight === "number" ? `${shipment.weight}${weightUnit ? ` ${weightUnit}` : ""}` : undefined;
+  const pieces = typeof shipment?.pieces === "number" ? String(shipment.pieces) : undefined;
+  const serviceType = clean(shipment?.transportMode);
+  const fingerprint = `${status}|${latest?.description ?? ""}|${latest?.date ?? ""}`;
   return {
-    trackingNumber: number,
-    status: "InTransit",
-    subStatus: "InTransit_Other",
-    carrier: "Mock Carrier",
-    lastEvent: "Package in transit to distribution hub (Sandbox / Missing TRACKING_API_KEY)",
-    lastEventLocation: "International Sorting Hub",
-    lastUpdate: now,
-    events: [
-      {
-        date: now.toISOString(),
-        timeUtc: now,
-        description: "Package received at international sorting facility",
-        location: "International Sorting Hub",
-        stage: "InTransit",
-        subStatus: "InTransit_Other",
-      },
-    ],
-    milestones: [{ keyStage: "InfoReceived", timeUtc: now, timeIso: now.toISOString() }],
-  };
-}
-
-function rejectedResult(item: z.infer<typeof rejectedItemSchema>): TrackingResult {
-  const carrierCode = parseCarrier(item.carrier);
-  return {
-    trackingNumber: item.number.trim(),
-    status: "NotFound",
-    ...(carrierCode != null ? { carrierCode } : {}),
-    ...(item.error?.code != null ? { errorCode: item.error.code } : {}),
-    lastEvent: cleanText(item.error?.message) ?? "Tracking number not found or not yet registered",
-    lastUpdate: new Date(),
-    events: [],
+    trackingNumber,
+    status,
+    ...(carrier ? { carrier } : {}),
+    ...(latest?.description ? { lastEvent: latest.description } : {}),
+    ...(latest?.location ? { lastEventLocation: latest.location } : {}),
+    ...(latest?.timeUtc ? { lastUpdate: latest.timeUtc } : {}),
+    ...(clean(shipment?.originCode) || clean(shipment?.origin)
+      ? { originCountry: clean(shipment?.originCode) ?? clean(shipment?.origin) }
+      : {}),
+    ...(clean(shipment?.destinationCode) || clean(shipment?.destination) || meta?.destinationCountry
+      ? {
+          destinationCountry:
+            clean(shipment?.destinationCode) ?? clean(shipment?.destination) ?? meta?.destinationCountry,
+        }
+      : {}),
+    ...(serviceType ? { serviceType } : {}),
+    ...(weightRaw ? { weightRaw } : {}),
+    ...(pieces ? { pieces } : {}),
+    events,
     milestones: [],
+    eventsHash: hashText(fingerprint),
+    ...(meta?.requestId ? { requestId: meta.requestId } : {}),
+    ...(meta?.webhookSecret ? { webhookSecret: meta.webhookSecret } : {}),
   };
 }
 
-export interface ITrackingProvider {
-  register(input: string | RegisterInput, carrierCode?: number): Promise<RegisterResult>;
-  getTracking(trackingNumber: string, carrierCode?: number): Promise<TrackingResult>;
-  getBatchTracking(queries: readonly (string | TrackQuery)[]): Promise<Map<string, TrackingResult>>;
-  stopTracking(number: string, carrierCode?: number): Promise<boolean>;
-  deleteTracking(number: string, carrierCode?: number): Promise<boolean>;
-}
-
-export function trackKey(number: string, carrierCode?: number): string {
-  return carrierCode == null ? number : `${number}#${carrierCode}`;
+export function parseParcelsWebhook(input: unknown): { requestId?: string; results: TrackingResult[] } {
+  const parsed = webhookSchema.safeParse(input);
+  if (!parsed.success) return { results: [] };
+  const rows = parsed.data.results ?? (parsed.data.result ? [parsed.data.result] : []);
+  const requestId = parsed.data.request_id;
+  return {
+    ...(requestId ? { requestId } : {}),
+    results: rows.flatMap((row) => {
+      if (row.state === "processing" || !row.shipment) return [];
+      return [shipmentToResult(row.tracking_number, row.shipment, requestId ? { requestId } : undefined)];
+    }),
+  };
 }
 
 export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-export class SeventeenTrackService implements ITrackingProvider {
+export class ParcelsService {
   private readonly apiKey: string;
   private readonly fetchImpl: FetchLike;
 
   constructor(apiKey?: string, fetchImpl: FetchLike = fetch) {
-    this.apiKey = apiKey ?? process.env.TRACKING_API_KEY ?? "";
+    this.apiKey = (apiKey ?? parcelsApiKey()).trim();
     this.fetchImpl = fetchImpl;
   }
 
   hasApiKey(): boolean {
-    return Boolean(this.apiKey.trim().length > 0 && !this.apiKey.startsWith("your_"));
+    return this.apiKey.length > 0 && !this.apiKey.startsWith("your_");
   }
 
-  async register(input: string | RegisterInput, carrierCode?: number): Promise<RegisterResult> {
-    const request = typeof input === "string" ? { number: input, ...(carrierCode != null ? { carrier: carrierCode } : {}) } : input;
-    const number = request.number.trim();
-    if (!this.hasApiKey()) {
-      console.warn(`[17TRACK] TRACKING_API_KEY is not configured. Mock registration for ${number}`);
-      return { ok: true, number, alreadyRegistered: false, ...(request.carrier != null ? { carrierCode: request.carrier } : {}) };
-    }
-
-    const payload = this.registerPayload({ ...request, number });
-    const envelope = await this.post("/register", [payload]);
-    const accepted = envelope.data?.accepted?.[0];
-    const acceptedParsed = accepted ? acceptedItemSchema.safeParse(accepted) : undefined;
-    if (acceptedParsed?.success) {
-      const detected = parseCarrier(acceptedParsed.data.carrier);
-      return {
-        ok: true,
-        number: acceptedParsed.data.number.trim(),
-        alreadyRegistered: false,
-        ...(detected != null ? { carrierCode: detected } : {}),
-      };
-    }
-
-    const rejected = envelope.data?.rejected?.[0];
-    const rejectedParsed = rejected ? rejectedItemSchema.safeParse(rejected) : undefined;
-    if (rejectedParsed?.success) {
-      const errorCode = rejectedParsed.data.error?.code;
-      if (errorCode === SeventeenTrackErrorCode.AlreadyRegistered) {
-        const detected = parseCarrier(rejectedParsed.data.carrier) ?? request.carrier;
-        return {
-          ok: true,
-          number,
-          alreadyRegistered: true,
-          ...(detected != null ? { carrierCode: detected } : {}),
-          ...(errorCode != null ? { errorCode } : {}),
-        };
-      }
-      return {
-        ok: false,
-        number,
-        alreadyRegistered: false,
-        ...(errorCode != null ? { errorCode } : {}),
-        message: cleanText(rejectedParsed.data.error?.message) ?? "17TRACK rejected this tracking number.",
-      };
-    }
-
-    return { ok: envelope.code === 0, number, alreadyRegistered: false };
-  }
-
-  async getTracking(trackingNumber: string, carrierCode?: number): Promise<TrackingResult> {
+  async getTracking(trackingNumber: string, destinationCountry?: string): Promise<TrackingResult> {
     const batch = await this.getBatchTracking([
-      { number: trackingNumber.trim(), ...(carrierCode != null ? { carrier: carrierCode } : {}) },
+      { number: trackingNumber, ...(destinationCountry ? { destinationCountry } : {}) },
     ]);
     return (
-      batch.get(trackKey(trackingNumber.trim(), carrierCode)) ??
       batch.get(trackingNumber.trim()) ?? {
         trackingNumber: trackingNumber.trim(),
-        status: "NotFound",
-        lastEvent: "No information received yet from the carrier network.",
-        lastUpdate: new Date(),
+        status: "Pending",
+        lastEvent: "Parcels has not returned a status yet.",
         events: [],
         milestones: [],
       }
     );
   }
 
-  async getBatchTracking(queries: readonly (string | TrackQuery)[]): Promise<Map<string, TrackingResult>> {
+  async getBatchTracking(queries: readonly TrackQuery[]): Promise<Map<string, TrackingResult>> {
     const results = new Map<string, TrackingResult>();
     const unique = new Map<string, TrackQuery>();
-    for (const entry of queries) {
-      const query = typeof entry === "string" ? { number: entry } : entry;
+    for (const query of queries) {
       const number = query.number.trim();
       if (!number) continue;
-      unique.set(trackKey(number, query.carrier), { number, ...(query.carrier != null ? { carrier: query.carrier } : {}) });
+      unique.set(number, { number, ...(query.destinationCountry ? { destinationCountry: query.destinationCountry } : {}) });
     }
-    if (unique.size === 0) return results;
-
-    if (!this.hasApiKey()) {
-      for (const query of unique.values()) {
-        const result = mockResult(query.number);
-        results.set(trackKey(query.number, query.carrier), result);
-        if (!results.has(query.number)) results.set(query.number, result);
-      }
-      return results;
-    }
+    if (unique.size === 0 || !this.hasApiKey()) return results;
 
     const list = [...unique.values()];
-    for (let offset = 0; offset < list.length; offset += SEVENTEEN_TRACK_BATCH_LIMIT) {
-      if (offset > 0) await delay(350);
-      const chunk = list.slice(offset, offset + SEVENTEEN_TRACK_BATCH_LIMIT);
-      const envelope = await this.post(
-        "/gettrackinfo",
-        chunk.map((query) => ({ number: query.number, ...(query.carrier != null ? { carrier: query.carrier } : {}) })),
-      );
-      for (const item of envelope.data?.accepted ?? []) {
-        const result = parseAcceptedTrackItem(item);
-        if (!result) continue;
-        results.set(trackKey(result.trackingNumber, result.carrierCode), result);
-        if (!results.has(result.trackingNumber)) results.set(result.trackingNumber, result);
+    const webhookUrl = parcelsWebhookUrl();
+    for (let offset = 0; offset < list.length; offset += PARCELS_BATCH_LIMIT) {
+      const chunk = list.slice(offset, offset + PARCELS_BATCH_LIMIT);
+      const body = await this.postTrackings(chunk, webhookUrl);
+      const requestId = body.request_id;
+      const secret = clean(body.webhook?.secret);
+      const meta = {
+        ...(requestId ? { requestId } : {}),
+        ...(secret ? { webhookSecret: secret } : {}),
+      };
+      for (const row of body.results ?? []) {
+        const destinationCountry = chunk.find((item) => item.number === row.tracking_number)?.destinationCountry;
+        if (row.state === "processing" || !row.shipment) {
+          results.set(row.tracking_number, {
+            trackingNumber: row.tracking_number,
+            status: "Pending",
+            lastEvent: "Parcels is still checking this number.",
+            events: [],
+            milestones: [],
+            refreshOnly: true,
+            ...(destinationCountry ? { destinationCountry } : {}),
+            ...meta,
+          });
+          continue;
+        }
+        results.set(
+          row.tracking_number,
+          shipmentToResult(row.tracking_number, row.shipment, { ...meta, ...(destinationCountry ? { destinationCountry } : {}) }),
+        );
       }
-      for (const item of envelope.data?.rejected ?? []) {
-        const parsed = rejectedItemSchema.safeParse(item);
-        if (!parsed.success) continue;
-        const result = rejectedResult(parsed.data);
-        results.set(trackKey(result.trackingNumber, result.carrierCode), result);
-        if (!results.has(result.trackingNumber)) results.set(result.trackingNumber, result);
+      for (const rejected of body.rejected ?? []) {
+        const number = clean(rejected.tracking_number);
+        if (!number) continue;
+        results.set(number, {
+          trackingNumber: number,
+          status: "NotFound",
+          lastEvent: clean(rejected.message) ?? clean(rejected.code) ?? "Parcels rejected this tracking number.",
+          events: [],
+          milestones: [],
+          ...meta,
+        });
       }
     }
     return results;
   }
 
-  async stopTracking(number: string, carrierCode?: number): Promise<boolean> {
-    return this.mutate("/stoptrack", number, carrierCode);
-  }
-
-  async deleteTracking(number: string, carrierCode?: number): Promise<boolean> {
-    return this.mutate("/deletetrack", number, carrierCode);
-  }
-
-  private async mutate(path: "/stoptrack" | "/deletetrack", number: string, carrierCode?: number): Promise<boolean> {
-    const cleanNumber = number.trim();
-    if (!this.hasApiKey()) return true;
-    const envelope = await this.post(path, [
-      { number: cleanNumber, ...(carrierCode != null ? { carrier: carrierCode } : {}) },
-    ]);
-    const rejected = envelope.data?.rejected?.[0];
-    if (!rejected) return envelope.code === 0;
-    const parsed = rejectedItemSchema.safeParse(rejected);
-    if (!parsed.success) return false;
-    console.warn(`[17TRACK] ${path} rejected ${cleanNumber}: ${parsed.data.error?.message ?? "unknown error"}`);
-    return false;
-  }
-
-  private registerPayload(input: RegisterInput): Record<string, unknown> {
-    const payload: Record<string, unknown> = { number: input.number.trim() };
-    if (input.carrier != null) payload.carrier = input.carrier;
-    if (input.finalCarrier != null) payload.final_carrier = input.finalCarrier;
-    if (input.lang) payload.lang = input.lang;
-    if (input.tag) payload.tag = input.tag.slice(0, 100);
-    if (input.email) payload.email = input.email;
-    if (input.orderNo) payload.order_no = input.orderNo;
-    if (input.originCountry) payload.origin_country = input.originCountry;
-    if (input.destinationCountry) payload.destination_country = input.destinationCountry;
-    if (input.destinationPostalCode) payload.destination_postal_code = input.destinationPostalCode;
-    if (input.destinationCity) payload.destination_city = input.destinationCity;
-    if (input.shipDate) payload.ship_date = input.shipDate;
-    if (input.phoneNumber) payload.phone_number = input.phoneNumber;
-    if (input.phoneNumberLast4) payload.phone_number_last_4 = input.phoneNumberLast4;
-    if (input.remark) payload.remark = input.remark.slice(0, 1000);
-    return payload;
-  }
-
-  private async post(path: string, body: unknown): Promise<z.infer<typeof envelopeSchema>> {
-    const response = await this.fetchImpl(`${SEVENTEEN_TRACK_BASE_URL}${path}`, {
+  private async postTrackings(queries: readonly TrackQuery[], webhookUrl?: string): Promise<z.infer<typeof responseSchema>> {
+    const response = await this.fetchImpl(`${PARCELS_BASE_URL}/trackings`, {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
-        "17token": this.apiKey,
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20_000),
+      body: JSON.stringify({
+        language: "en",
+        ...(webhookUrl ? { webhook_url: webhookUrl } : {}),
+        shipments: queries.map((query) => ({
+          tracking_number: query.number,
+          ...(query.destinationCountry ? { destination_country: query.destinationCountry } : {}),
+        })),
+      }),
+      signal: AbortSignal.timeout(25_000),
     });
 
-    if (response.status === 429) {
-      throw new SeventeenTrackApiError("17TRACK rate limit reached (3 requests per second).", 429);
-    }
+    const json: unknown = await response.json().catch(() => null);
+    const parsed = responseSchema.safeParse(json);
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new SeventeenTrackApiError(
-        `17TRACK ${path} failed with HTTP ${response.status}: ${errorText.slice(0, 300)}`,
-        response.status,
-      );
+      const message = parsed.success
+        ? (clean(parsed.data.error?.message) ?? `Parcels returned HTTP ${response.status}.`)
+        : `Parcels returned HTTP ${response.status}.`;
+      const code = parsed.success ? clean(parsed.data.error?.code) : undefined;
+      throw new ParcelsApiError(message, code ?? response.status);
     }
-
-    const json: unknown = await response.json();
-    const envelope = envelopeSchema.safeParse(json);
-    if (!envelope.success) {
-      throw new SeventeenTrackApiError(`17TRACK ${path} returned an unexpected payload.`);
-    }
-    if (envelope.data.code !== 0) {
-      throw new SeventeenTrackApiError(`17TRACK ${path} returned code ${envelope.data.code}.`, envelope.data.code);
-    }
-    return envelope.data;
+    if (!parsed.success) throw new ParcelsApiError("Parcels returned an unexpected payload.");
+    return parsed.data;
   }
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export const trackingService = new SeventeenTrackService();
+export const trackingService = new ParcelsService();
 export default trackingService;

@@ -34,7 +34,7 @@ export async function setupBotCommands(bot: Bot<Context>) {
   try {
     await bot.api.setMyCommands([
       { command: "start", description: "Start the bot & show help menu" },
-      { command: "track", description: "Track a new package (/track <number> [name])" },
+      { command: "track", description: "Track a package (/track <number> [country] [name])" },
       { command: "list", description: "List all your tracked packages" },
       { command: "status", description: "Check detailed status of a package" },
       { command: "remove", description: "Stop tracking and remove a package" },

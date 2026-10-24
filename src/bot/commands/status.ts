@@ -39,7 +39,7 @@ export async function handleStatus(ctx: CommandContext<Context>) {
   }
 
   if (!trackingService.hasApiKey()) {
-    let message = `${formatPackageCard(pkg)}\n\n🔔 <i>This copy comes from the last webhook. 17TRACK pushes the next update.</i>`;
+    let message = formatPackageCard(pkg);
     if (pkg.events.length > 0) {
       message += `\n\n📜 <b>Recent Checkpoints:</b>\n`;
       for (const event of pkg.events.slice(0, 5)) {
@@ -56,7 +56,10 @@ export async function handleStatus(ctx: CommandContext<Context>) {
   });
 
   try {
-    const liveTracking = await trackingService.getTracking(trackingNumber, pkg.carrierCode ?? undefined);
+    const liveTracking = await trackingService.getTracking(
+      trackingNumber,
+      pkg.destinationCountry ?? undefined,
+    );
     const { updated: updatedPkg } = await applyTrackingResult(pkg.id, liveTracking, pkg);
     const shown = updatedPkg ?? pkg;
 
