@@ -1,6 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
+export const MISSING_API_KEY_MESSAGE =
+  "⚠️ <b>Tracking is not configured.</b>\nAdd <code>TRACKING_API_KEY</code> from the 17TRACK dashboard. Without that key I cannot look up real packages.";
+
 export const SEVENTEEN_TRACK_BASE_URL = "https://api.17track.net/track/v2.4";
 export const SEVENTEEN_TRACK_BATCH_LIMIT = 40;
 

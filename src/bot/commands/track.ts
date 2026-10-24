@@ -1,6 +1,6 @@
 import type { CommandContext, Context } from "grammy";
 import { createPackage, ensureUser, findPackage, renamePackage } from "../../db/packages.js";
-import { SeventeenTrackApiError, trackingService } from "../../services/tracking.js";
+import { MISSING_API_KEY_MESSAGE, SeventeenTrackApiError, trackingService } from "../../services/tracking.js";
 import { formatPackageCard, escapeHtml } from "../../services/notifier.js";
 
 export async function handleTrack(ctx: CommandContext<Context>) {
@@ -25,6 +25,10 @@ export async function handleTrack(ctx: CommandContext<Context>) {
       `⚠️ <b>Invalid tracking number format.</b>\nTracking numbers must be between 5 and 50 alphanumeric characters.`,
       { parse_mode: "HTML" }
     );
+  }
+
+  if (!trackingService.hasApiKey()) {
+    return ctx.reply(MISSING_API_KEY_MESSAGE, { parse_mode: "HTML" });
   }
 
   const waitMsg = await ctx.reply(`🔍 Registering tracking <code>${escapeHtml(trackingNumber)}</code>...`, {

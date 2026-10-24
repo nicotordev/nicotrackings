@@ -34,6 +34,11 @@ export class PollerService {
       return 0;
     }
 
+    if (!trackingService.hasApiKey()) {
+      console.warn("[Poller] TRACKING_API_KEY is missing. Skipping this cycle.");
+      return 0;
+    }
+
     this.isPolling = true;
     let updatedCount = 0;
 

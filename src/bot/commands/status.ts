@@ -1,6 +1,6 @@
 import type { CommandContext, Context } from "grammy";
 import { applyTrackingResult, findPackageWithHistory, findUserByChat } from "../../db/packages.js";
-import { trackingService } from "../../services/tracking.js";
+import { MISSING_API_KEY_MESSAGE, trackingService } from "../../services/tracking.js";
 import { formatPackageCard, escapeHtml } from "../../services/notifier.js";
 
 export async function handleStatus(ctx: CommandContext<Context>) {
@@ -36,6 +36,19 @@ export async function handleStatus(ctx: CommandContext<Context>) {
       `❌ You are not tracking package <code>${escapeHtml(trackingNumber)}</code>.\nUse <code>/track ${escapeHtml(trackingNumber)}</code> to add it.`,
       { parse_mode: "HTML" }
     );
+  }
+
+  if (!trackingService.hasApiKey()) {
+    let message = `${MISSING_API_KEY_MESSAGE}\n\n${formatPackageCard(pkg)}`;
+    if (pkg.events.length > 0) {
+      message += `\n\n📜 <b>Recent Checkpoints:</b>\n`;
+      for (const event of pkg.events.slice(0, 5)) {
+        const dateStr = event.timeIso ? `<code>[${escapeHtml(event.timeIso)}]</code> ` : "";
+        const locStr = event.location ? ` (${escapeHtml(event.location)})` : "";
+        message += `• ${dateStr}${escapeHtml(event.description)}${locStr}\n`;
+      }
+    }
+    return ctx.reply(message, { parse_mode: "HTML" });
   }
 
   const waitMsg = await ctx.reply(`🔄 Fetching latest live status for <code>${escapeHtml(trackingNumber)}</code>...`, {
