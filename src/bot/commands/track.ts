@@ -1,6 +1,6 @@
 import type { CommandContext, Context } from "grammy";
-import { createPackage, ensureUser, findPackage, renamePackage } from "../../db/packages.js";
-import { ParcelsApiError, trackingService } from "../../services/tracking.js";
+import { applyTrackingResult, createPackage, ensureUser, findPackage, renamePackage } from "../../db/packages.js";
+import { ParcelsApiError, toPackageStatus, trackingService } from "../../services/tracking.js";
 import { formatPackageCard, escapeHtml } from "../../services/notifier.js";
 
 export async function handleTrack(ctx: CommandContext<Context>) {
@@ -54,11 +54,34 @@ export async function handleTrack(ctx: CommandContext<Context>) {
         existing.friendlyName = friendlyName;
       }
 
+      const country = destinationCountry ?? existing.destinationCountry ?? undefined;
+      const tracking = await trackingService.getTracking(trackingNumber, country);
+      if (tracking.status === "NotFound" && tracking.lastEvent) {
+        await ctx.api.editMessageText(
+          chatId,
+          waitMsg.message_id,
+          `❌ <b>Parcels rejected this number.</b>\n${escapeHtml(tracking.lastEvent)}\n\nIf it asks for a destination country, use <code>/track ${escapeHtml(trackingNumber)} ES</code>.`,
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+
+      const stamped = { ...tracking, ...(country ? { destinationCountry: country } : {}) };
+      const { updated } = await applyTrackingResult(existing.id, stamped, {
+        status: toPackageStatus(existing.status),
+        deliveredAt: existing.deliveredAt,
+        eventsHash: existing.eventsHash,
+        lastEvent: existing.lastEvent,
+      });
+      const card = formatPackageCard(updated ?? existing, stamped);
+      const note = tracking.refreshOnly
+        ? "Parcels is still checking this number. I will update the card when the result arrives."
+        : "Status refreshed.";
       await ctx.api.editMessageText(
         chatId,
         waitMsg.message_id,
-        `ℹ️ <b>You are already tracking this package!</b>\n\n${formatPackageCard(existing)}`,
-        { parse_mode: "HTML" }
+        `ℹ️ <b>Already tracking this package.</b>\n\n${card}\n\n<i>${escapeHtml(note)}</i>`,
+        { parse_mode: "HTML" },
       );
       return;
     }

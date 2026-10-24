@@ -52,11 +52,13 @@ export class PollerService {
       if (packages.length === 0) return 0;
 
       console.log(`[Poller] Starting status check for ${packages.length} active package records...`);
+      const fallbackCountry = process.env.PARCELS_DESTINATION_COUNTRY?.trim().toUpperCase();
       const queries = new Map<string, { number: string; destinationCountry?: string }>();
       for (const pkg of packages) {
+        const destinationCountry = pkg.destinationCountry ?? (fallbackCountry || undefined);
         queries.set(pkg.trackingNumber, {
           number: pkg.trackingNumber,
-          ...(pkg.destinationCountry ? { destinationCountry: pkg.destinationCountry } : {}),
+          ...(destinationCountry ? { destinationCountry } : {}),
         });
       }
 
