@@ -33,7 +33,7 @@ async function main() {
 
   const trackingApiKey = process.env.TRACKING_API_KEY;
   if (!trackingApiKey || trackingApiKey.trim() === "" || trackingApiKey.includes("your_17track_api_key")) {
-    console.warn("⚠️ TRACKING_API_KEY is not configured in .env. Bot will use sandbox/mock responses for tracking.");
+    console.log("✅ 17TRACK webhook-only mode. Numbers are stored here and updated when a webhook arrives.");
   } else {
     console.log("✅ 17TRACK API client configured.");
   }

@@ -1,6 +1,6 @@
 import type { CommandContext, Context } from "grammy";
 import { createPackage, ensureUser, findPackage, renamePackage } from "../../db/packages.js";
-import { MISSING_API_KEY_MESSAGE, SeventeenTrackApiError, trackingService } from "../../services/tracking.js";
+import { SeventeenTrackApiError, trackingService, type TrackingResult } from "../../services/tracking.js";
 import { formatPackageCard, escapeHtml } from "../../services/notifier.js";
 
 export async function handleTrack(ctx: CommandContext<Context>) {
@@ -27,11 +27,7 @@ export async function handleTrack(ctx: CommandContext<Context>) {
     );
   }
 
-  if (!trackingService.hasApiKey()) {
-    return ctx.reply(MISSING_API_KEY_MESSAGE, { parse_mode: "HTML" });
-  }
-
-  const waitMsg = await ctx.reply(`🔍 Registering tracking <code>${escapeHtml(trackingNumber)}</code>...`, {
+  const waitMsg = await ctx.reply(`🔍 Saving <code>${escapeHtml(trackingNumber)}</code>...`, {
     parse_mode: "HTML",
   });
 
@@ -50,6 +46,28 @@ export async function handleTrack(ctx: CommandContext<Context>) {
         waitMsg.message_id,
         `ℹ️ <b>You are already tracking this package!</b>\n\n${formatPackageCard(existing)}`,
         { parse_mode: "HTML" }
+      );
+      return;
+    }
+
+    if (!trackingService.hasApiKey()) {
+      const pending: TrackingResult = {
+        trackingNumber,
+        status: "Pending",
+        lastEvent: "Waiting for a 17TRACK webhook.",
+        events: [],
+        milestones: [],
+      };
+      const newPkg = await createPackage(pending, {
+        userId: user.id,
+        ...(friendlyName ? { friendlyName } : {}),
+        tag: chatId.slice(0, 100),
+      });
+      await ctx.api.editMessageText(
+        chatId,
+        waitMsg.message_id,
+        `✅ <b>Package linked to this chat.</b>\n\n${formatPackageCard(newPkg)}\n\n🔔 Updates arrive when 17TRACK pushes a webhook for this number. Add the number in the 17TRACK dashboard if it is not subscribed there yet.`,
+        { parse_mode: "HTML" },
       );
       return;
     }

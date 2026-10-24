@@ -1,6 +1,6 @@
 import type { CommandContext, Context } from "grammy";
 import { applyTrackingResult, findPackageWithHistory, findUserByChat } from "../../db/packages.js";
-import { MISSING_API_KEY_MESSAGE, trackingService } from "../../services/tracking.js";
+import { trackingService } from "../../services/tracking.js";
 import { formatPackageCard, escapeHtml } from "../../services/notifier.js";
 
 export async function handleStatus(ctx: CommandContext<Context>) {
@@ -39,7 +39,7 @@ export async function handleStatus(ctx: CommandContext<Context>) {
   }
 
   if (!trackingService.hasApiKey()) {
-    let message = `${MISSING_API_KEY_MESSAGE}\n\n${formatPackageCard(pkg)}`;
+    let message = `${formatPackageCard(pkg)}\n\n🔔 <i>This copy comes from the last webhook. 17TRACK pushes the next update.</i>`;
     if (pkg.events.length > 0) {
       message += `\n\n📜 <b>Recent Checkpoints:</b>\n`;
       for (const event of pkg.events.slice(0, 5)) {

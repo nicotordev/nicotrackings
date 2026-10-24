@@ -14,6 +14,11 @@ export class PollerService {
       cronExpression = "*/15 * * * *";
     }
 
+    if (!trackingService.hasApiKey()) {
+      console.log("[Poller] No 17TRACK API key. Package updates come from the webhook only.");
+      return;
+    }
+
     console.log(`[Poller] Initializing tracking poller with schedule: ${cronExpression}`);
     this.cronTask = cron.schedule(cronExpression, async () => {
       await this.poll(api);

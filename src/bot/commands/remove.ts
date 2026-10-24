@@ -38,7 +38,7 @@ export async function handleRemove(ctx: CommandContext<Context>) {
 
   const remaining = await otherPackageCount(pkg.trackingNumber, pkg.id);
   await deletePackage(pkg.id);
-  if (remaining === 0) {
+  if (remaining === 0 && trackingService.hasApiKey()) {
     const removed = await trackingService.deleteTracking(pkg.trackingNumber, pkg.carrierCode ?? undefined);
     if (!removed) {
       console.warn(`[17TRACK] Local package ${pkg.trackingNumber} was removed, but deletetrack did not accept it.`);
