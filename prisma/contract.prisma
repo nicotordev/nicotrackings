@@ -1,0 +1,110 @@
+// use prisma-8
+
+enum PackageStatus {
+  @@type("pg/text@1")
+  Pending
+  NotFound
+  InfoReceived
+  InTransit
+  Expired
+  AvailableForPickup
+  OutForDelivery
+  DeliveryFailure
+  Delivered
+  Exception
+}
+
+enum TrackingState {
+  @@type("pg/text@1")
+  Tracking
+  Stopped
+}
+
+model User {
+  id        String    @id @onCreate(cuid(2))
+  chatId    String    @unique
+  username  String?
+  firstName String?
+  packages  Package[]
+  createdAt temporal.createdAtJsDate()
+  updatedAt temporal.updatedAtJsDate()
+}
+
+model Package {
+  id                    String         @id @onCreate(cuid(2))
+  trackingNumber        String
+  carrierCode           Int?
+  carrier               String?
+  finalCarrierCode      Int?
+  friendlyName          String?
+  lang                  String         @default("en")
+  tag                   String?
+  status                PackageStatus  @default(Pending)
+  subStatus             String?
+  subStatusDescr        String?
+  lastEvent             String?
+  lastEventLocation     String?
+  lastUpdate            TimestamptzJsDate?
+  originCountry         String?
+  destinationCountry    String?
+  destinationCity       String?
+  destinationPostalCode String?
+  shipDate              String?
+  estimatedFrom         TimestamptzJsDate?
+  estimatedTo           TimestamptzJsDate?
+  daysOfTransit         Int?
+  daysAfterLastUpdate   Int?
+  serviceType           String?
+  weightRaw             String?
+  pieces                String?
+  localNumber           String?
+  localProvider         String?
+  providerTips          String?
+  eventsHash            Int?
+  trackingState         TrackingState  @default(Tracking)
+  deliveredAt           TimestamptzJsDate?
+  userId                String
+  user                  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events                TrackingEvent[]
+  milestones            Milestone[]
+  createdAt             temporal.createdAtJsDate()
+  updatedAt             temporal.updatedAtJsDate()
+
+  @@unique([trackingNumber, userId])
+  @@index([trackingNumber], name: "package_tracking_number")
+  @@index([userId], name: "package_user")
+  @@index([trackingState, status], name: "package_tracking_state")
+}
+
+model TrackingEvent {
+  id           String            @id @onCreate(cuid(2))
+  packageId    String
+  package      Package           @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  occurredAt   TimestamptzJsDate?
+  timeIso      String?
+  description  String
+  location     String?
+  stage        String?
+  subStatus    String?
+  country      String?
+  city         String?
+  providerKey  Int?
+  providerName String?
+  sortIndex    Int
+  createdAt    temporal.createdAtJsDate()
+
+  @@index([packageId, sortIndex], name: "tracking_event_package_order")
+}
+
+model Milestone {
+  id        String            @id @onCreate(cuid(2))
+  packageId String
+  package   Package           @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  keyStage  String
+  timeUtc   TimestamptzJsDate?
+  timeIso   String?
+  sortIndex Int
+
+  @@unique([packageId, keyStage])
+  @@index([packageId, sortIndex], name: "milestone_package_order")
+}
